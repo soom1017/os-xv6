@@ -89,6 +89,11 @@ found:
   p->state = EMBRYO;
   p->pid = nextpid++;
 
+  p->priority = 3;
+  p->tick = 0;
+  p->qlevel = L0;
+  p->arrival = ticks % 100 + 64;
+
   release(&ptable.lock);
 
   // Allocate kernel stack.
@@ -324,6 +329,7 @@ scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
+  enum procqlevel qlevel;
   c->proc = 0;
   
   for(;;){
@@ -332,24 +338,54 @@ scheduler(void)
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
-
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
-
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      c->proc = 0;
+    uint min_arrival;
+    struct proc* min_arrival_p;
+    int found;
+    for (qlevel = 0; qlevel < NQUEUE - 1; qlevel++) {
+      found = 0;
+      for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+        if(p->state != RUNNABLE || p->qlevel != qlevel)
+          continue;
+        if (found > 0 && min_arrival <= p->arrival)
+          continue;
+        min_arrival = p->arrival;
+        min_arrival_p = p;
+        found = 1;
+      }
+      if(found) {
+        goto found;
+      }
     }
+    // L2 scheduling은 따로 구현 - priority 고려하기
+    uint min_priority = 4;
+    found = 0;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->state != RUNNABLE || p->qlevel != 2 || min_priority < p->priority)
+        continue;
+      if(found > 0 && min_arrival <= p->arrival)
+        continue;
+      min_arrival = p->arrival;
+      min_arrival_p = p;
+      found = 1;
+    }
+    if(!found) {
+      goto not_found;
+    }
+found:
+    // Switch to chosen process.  It is the process's job
+    // to release ptable.lock and then reacquire it
+    // before jumping back to us.
+    c->proc = min_arrival_p;
+    switchuvm(min_arrival_p);
+    min_arrival_p->state = RUNNING;
+
+    swtch(&(c->scheduler), min_arrival_p->context);
+    switchkvm();
+
+    // Process is done running for now.
+    // It should have changed its p->state before coming back.
+    c->proc = 0;
+not_found:
     release(&ptable.lock);
 
   }
@@ -381,12 +417,69 @@ sched(void)
   mycpu()->intena = intena;
 }
 
+// 3-level MLFQ
+// quick sort for priority boosting
+void 
+quicksort(struct proc* arr, int low, int high) {
+  if (low < high) {
+    uint pivot = arr[high].arrival;
+    int i = low - 1;
+    for (int j = low; j <= high - 1; j++) {
+      if (arr[j].arrival <= pivot) {
+        i++;
+        struct proc temp = arr[i];
+        arr[i] = arr[j];
+        arr[j] = temp;
+      }
+    }
+    struct proc temp = arr[i + 1];
+    arr[i + 1] = arr[high];
+    arr[high] = temp;
+
+    int pi = i + 1;
+
+    quicksort(arr, low, pi - 1);
+    quicksort(arr, pi + 1, high);
+  }
+}
+
 // Give up the CPU for one scheduling round.
 void
 yield(void)
 {
   acquire(&ptable.lock);  //DOC: yieldlock
-  myproc()->state = RUNNABLE;
+  // 3-level MLFQ
+  struct proc* curproc = myproc();
+  if (++curproc->tick == 2 * myproc()->qlevel + 4) {
+    if(curproc->qlevel == L2) {
+      // priority 조정
+      if(curproc->priority > 0)
+        curproc->priority--;
+    }
+    else {
+      // queue 레벨 조정
+      curproc->qlevel++;
+    }
+    curproc->tick = 0;
+  }
+  curproc->arrival = ticks % 100 + 64;
+  curproc->state = RUNNABLE;
+
+  // priority boosting
+  if(ticks % 100 == 0) {
+    struct proc* p;
+    for(p=ptable.proc; p<&ptable.proc[NPROC]; p++)
+      p->arrival += p->qlevel * 200;    // 0 <= arrival <= 164
+
+    quicksort(ptable.proc, 0, NPROC - 1);
+
+    for(uint i=0; i<NPROC; i++) {
+      p = &ptable.proc[i];
+      p->qlevel = L0;
+      p->tick = 0;
+      p->arrival = i;
+    }
+  }
   sched();
   release(&ptable.lock);
 }

@@ -33,6 +33,7 @@ struct context {
 };
 
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
+enum procqlevel { L0, L1, L2 };
 
 // Per-process state
 struct proc {
@@ -49,6 +50,11 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  // 3-level MLFQ
+  uint priority;               // 우선순위 값
+  uint tick;                   // 지금껏 사용한 tick
+  enum procqlevel qlevel;      // 프로세스가 속한 큐 레벨
+  uint arrival;                // 도착시간
 };
 
 // Process memory is laid out contiguously, low addresses first:

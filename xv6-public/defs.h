@@ -120,6 +120,7 @@ void            userinit(void);
 int             wait(void);
 void            wakeup(void*);
 void            yield(void);
+void            quicksort(struct proc* arr, int low, int high);
 
 // swtch.S
 void            swtch(struct context**, struct context*);
