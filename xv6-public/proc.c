@@ -92,7 +92,7 @@ found:
   p->priority = 3;
   p->tick = 0;
   p->qlevel = L0;
-  p->arrival = ticks % 100 + 64;
+  p->arrival = ticks + 64;
 
   release(&ptable.lock);
 
@@ -462,11 +462,11 @@ yield(void)
     }
     curproc->tick = 0;
   }
-  curproc->arrival = ticks % 100 + 64;
+  curproc->arrival = ticks + 64;
   curproc->state = RUNNABLE;
 
   // priority boosting
-  if(ticks % 100 == 0) {
+  if(ticks == 100) {
     struct proc* p;
     for(p=ptable.proc; p<&ptable.proc[NPROC]; p++)
       p->arrival += p->qlevel * 200;    // 0 <= arrival <= 164
@@ -480,6 +480,7 @@ yield(void)
       p->arrival = i;
     }
   }
+  ticks = 0;
   sched();
   release(&ptable.lock);
 }
