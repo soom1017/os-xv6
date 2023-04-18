@@ -156,6 +156,11 @@ _forktest: forktest.o $(ULIB)
 	# in order to be able to max out the proc table.
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o _forktest forktest.o ulib.o usys.o
 	$(OBJDUMP) -S _forktest > forktest.asm
+_mlfq_test: mlfq_test.o $(ULIB)
+	# mlfq_test has less library code linked in - needs to be small
+	# in order to be able to max out the proc table.
+	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o _mlfq_test mlfq_test.o ulib.o usys.o
+	$(OBJDUMP) -S _mlfq_test > mlfq_test.asm
 
 mkfs: mkfs.c fs.h
 	gcc -Werror -Wall -o mkfs mkfs.c
@@ -182,6 +187,7 @@ UPROGS=\
 	_wc\
 	_zombie\
 	_prac_myuserapp\
+	_mlfq_test\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
@@ -251,7 +257,7 @@ qemu-nox-gdb: fs.img xv6.img .gdbinit
 EXTRA=\
 	mkfs.c ulib.c user.h cat.c echo.c forktest.c grep.c kill.c\
 	ln.c ls.c mkdir.c rm.c stressfs.c wc.c zombie.c\
-	printf.c umalloc.c _prac_myuserapp.c\
+	printf.c umalloc.c prac_myuserapp.c mlfq_test.c\
 	README dot-bochsrc *.pl toc.* runoff runoff1 runoff.list\
 	.gdbinit.tmpl gdbutil\
 
