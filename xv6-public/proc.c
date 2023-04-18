@@ -337,7 +337,6 @@ scheduler(void)
     sti();
 
     // Loop over process table looking for process to run.
-    acquire(&ptable.lock);
     int min_arrival;
     struct proc* min_arrival_p;
     int found;
@@ -350,6 +349,8 @@ scheduler(void)
         goto found;
       }
     }
+
+    acquire(&ptable.lock);
     for (qlevel = 0; qlevel < NQUEUE - 1; qlevel++) {
       found = 0;
       for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
@@ -468,7 +469,6 @@ yield(void)
     else {
       // queue 레벨 조정
       curproc->qlevel++;
-      curproc->arrival = ticks + 64;
     }
     curproc->tick = 0;
   }
@@ -493,10 +493,10 @@ yield(void)
       p->priority = 3;
       p->arrival = i;
     }
+    acquire(&tickslock);
+    ticks = 0;
+    release(&tickslock);
   }
-  acquire(&tickslock);
-  ticks = 0;
-  release(&tickslock);
   sched();
   release(&ptable.lock);
 }

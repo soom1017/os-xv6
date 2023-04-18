@@ -8,6 +8,7 @@
 
 #define NUM_THREAD 4
 #define MAX_LEVEL 5
+#define STUID_TEST 2020057692
 
 static void
 putc(int fd, char c)
@@ -46,6 +47,7 @@ printint(int fd, int xx, int base, int sgn)
 void
 printf(int fd, const char *fmt, ...)
 {
+  schedulerLock(STUID_TEST);      // 출력하다가 CPU 뺏기면 출력이 이상하게 됨..
   char *s;
   int c, i, state;
   uint *ap;
@@ -89,6 +91,7 @@ printf(int fd, const char *fmt, ...)
       state = 0;
     }
   }
+  schedulerUnlock(STUID_TEST);
 }
 
 int parent;
