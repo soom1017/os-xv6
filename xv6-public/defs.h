@@ -121,7 +121,6 @@ void            userinit(void);
 int             wait(void);
 void            wakeup(void*);
 void            yield(void);
-void            quicksort(struct proc*, int, int);
 int             getLevel(void);
 void            setPriority(int, int);
 void            schedulerLock(int);

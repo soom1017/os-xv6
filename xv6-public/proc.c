@@ -96,7 +96,7 @@ found:
   p->priority = 3;
   p->tick = 0;
   p->qlevel = L0;
-  p->arrival = ticks + 64;
+  p->arrival = ticks + n * 600;
 
   release(&ptable.lock);
 
@@ -435,29 +435,6 @@ sched(void)
 
 // 3-level MLFQ
 // quick sort for priority boosting
-void 
-quicksort(struct proc* arr, int low, int high) {
-  if (low < high) {
-    int pivot = arr[high].arrival;
-    int i = low - 1;
-    for (int j = low; j <= high - 1; j++) {
-      if (arr[j].arrival <= pivot) {
-        i++;
-        struct proc temp = arr[i];
-        arr[i] = arr[j];
-        arr[j] = temp;
-      }
-    }
-    struct proc temp = arr[i + 1];
-    arr[i + 1] = arr[high];
-    arr[high] = temp;
-
-    int pi = i + 1;
-
-    quicksort(arr, low, pi - 1);
-    quicksort(arr, pi + 1, high);
-  }
-}
 
 // Give up the CPU for one scheduling round.
 void
@@ -478,30 +455,25 @@ yield(void)
     }
     curproc->tick = 0;
   }
-  curproc->arrival = ticks + 64;
+  curproc->arrival = ticks + n * 600;
   curproc->state = RUNNABLE;
 
   // priority boosting
-  if(ticks == 100) {
-    cprintf("PRIORITY BOOST %d\n", n++);
+  if(ticks >= 100) {
     struct proc* p;
     for(p=ptable.proc; p<&ptable.proc[NPROC]; p++) {
-      p->arrival += p->qlevel * 200;    // arrival <= 164
-      if(p->qlevel == NQUEUE - 1)
-        p->arrival += p->priority * 200;
-    }
-
-    quicksort(ptable.proc, 0, NPROC - 1);
-
-    for(int i=0; i<NPROC; i++) {
-      p = &ptable.proc[i];
-      p->qlevel = L0;
-      p->tick = 0;
-      p->priority = 3;
-      p->arrival = i;
+      if (p->state == RUNNABLE) {
+        p->arrival += p->qlevel * 100;    // arrival <= 100
+        if(p->qlevel == NQUEUE - 1)
+          p->arrival += p->priority * 100;
+        p->qlevel = L0;
+        p->tick = 0;
+        p->priority = 3;
+      }
     }
     acquire(&tickslock);
     ticks = 0;
+    n++;
     release(&tickslock);
   }
   sched();
@@ -578,7 +550,7 @@ wakeup1(void *chan)
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     if(p->state == SLEEPING && p->chan == chan) {
-      p->arrival = ticks + 64;
+      p->arrival = ticks + n * 600;
       p->state = RUNNABLE;
     }
 }
@@ -703,7 +675,7 @@ schedulerUnlock(int password) {
   }
   // qlevel, tick, priority, arrival 초기화
   acquire(&ptable.lock);
-  struct proc* curproc = myproc();
+  struct proc* curproc = schedlock.p;
   curproc->qlevel = L0;
   curproc->tick = 0;
   curproc->priority = 3;
