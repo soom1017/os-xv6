@@ -369,7 +369,7 @@ scheduler(void)
     uint min_priority = 4;
     found = 0;
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE || p->qlevel != 2 || min_priority < p->priority)
+      if(p->state != RUNNABLE || p->qlevel != NQUEUE - 1 || min_priority < p->priority)
         continue;
       if(found > 0 && min_arrival <= p->arrival)
         continue;
@@ -478,8 +478,11 @@ yield(void)
   // priority boosting
   if(ticks == 100) {
     struct proc* p;
-    for(p=ptable.proc; p<&ptable.proc[NPROC]; p++)
+    for(p=ptable.proc; p<&ptable.proc[NPROC]; p++) {
       p->arrival += p->qlevel * 200;    // arrival <= 164
+      if(p->qlevel == NQUEUE - 1)
+        p->arrival += p->priority * 200;
+    }
 
     quicksort(ptable.proc, 0, NPROC - 1);
 
