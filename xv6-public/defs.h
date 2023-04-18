@@ -9,6 +9,7 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
+struct schedulerlock;
 
 // bio.c
 void            binit(void);
@@ -125,6 +126,7 @@ int             getLevel(void);
 void            setPriority(int, int);
 void            schedulerLock(int);
 void            schedulerUnlock(int);
+extern struct schedulerlock schedlock;
 
 // swtch.S
 void            swtch(struct context**, struct context*);
@@ -167,10 +169,8 @@ void            timerinit(void);
 // trap.c
 void            idtinit(void);
 extern uint     ticks;
-extern int      schedlocked;
 void            tvinit(void);
 extern struct spinlock tickslock;
-extern struct spinlock schedlock;
 
 // uart.c
 void            uartinit(void);

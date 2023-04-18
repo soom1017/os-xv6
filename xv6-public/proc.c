@@ -6,12 +6,15 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
+#include "schedulerlock.h"
 
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
 } ptable;
 
+struct schedulerlock schedlock;
+int n;
 static struct proc *initproc;
 
 int nextpid = 1;
@@ -24,6 +27,7 @@ void
 pinit(void)
 {
   initlock(&ptable.lock, "ptable");
+  initlock(&schedlock.lock, "schedlock");
 }
 
 // Must be called with interrupts disabled
@@ -333,24 +337,26 @@ scheduler(void)
   c->proc = 0;
   
   for(;;){
-    // Enable interrupts on this processor.
-    sti();
-
-    // Loop over process table looking for process to run.
-    int min_arrival;
     struct proc* min_arrival_p;
-    int found;
     // Check Scheduler Lock
-    if(schedlocked) {
-      if(myproc()->state != RUNNABLE)
+    if(schedlock.locked) {
+      if(schedlock.p->state != RUNNABLE)
         schedulerUnlock(STUID);
       else {
-        min_arrival_p = myproc();
+        sti();
+        acquire(&ptable.lock);
+        min_arrival_p = schedlock.p;
         goto found;
       }
     }
 
+    // Enable interrupts on this processor.
+    sti();
+
+    // Loop over process table looking for process to run.
     acquire(&ptable.lock);
+    int min_arrival;
+    int found;
     for (qlevel = 0; qlevel < NQUEUE - 1; qlevel++) {
       found = 0;
       for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
@@ -477,6 +483,7 @@ yield(void)
 
   // priority boosting
   if(ticks == 100) {
+    cprintf("PRIORITY BOOST %d\n", n++);
     struct proc* p;
     for(p=ptable.proc; p<&ptable.proc[NPROC]; p++) {
       p->arrival += p->qlevel * 200;    // arrival <= 164
@@ -570,8 +577,10 @@ wakeup1(void *chan)
   struct proc *p;
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == SLEEPING && p->chan == chan)
+    if(p->state == SLEEPING && p->chan == chan) {
+      p->arrival = ticks + 64;
       p->state = RUNNABLE;
+    }
 }
 
 // Wake up all processes sleeping on chan.
@@ -667,15 +676,16 @@ schedulerLock(int password) {
     cprintf("PID: %d, TIME QUANTUM: %d, QUEUE LEVEL: L%d", p->pid, p->tick, p->qlevel);
     exit();
   }
-  acquire(&schedlock);
-  schedlocked = 1;
-  release(&schedlock);
+  acquire(&schedlock.lock);
+  schedlock.locked = 1;
+  schedlock.p = myproc();
+  release(&schedlock.lock);
 }
 
 void
 schedulerUnlock(int password) {
   if(password != STUID) {
-    struct proc* p = myproc();
+    struct proc* p = schedlock.p;
     cprintf("PID: %d, TIME QUANTUM: %d, QUEUE LEVEL: L%d", p->pid, p->tick, p->qlevel);
     exit();
   }
@@ -703,7 +713,7 @@ schedulerUnlock(int password) {
     curproc->arrival = -1;
   release(&ptable.lock);
 
-  acquire(&schedlock);
-  schedlocked = 0;
-  release(&schedlock);
+  acquire(&schedlock.lock);
+  schedlock.locked = 0;
+  release(&schedlock.lock);
 }

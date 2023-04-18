@@ -7,14 +7,13 @@
 #include "x86.h"
 #include "traps.h"
 #include "spinlock.h"
+#include "schedulerlock.h"
 
 // Interrupt descriptor table (shared by all CPUs).
 struct gatedesc idt[256];
 extern uint vectors[];  // in vectors.S: array of 256 entry pointers
 struct spinlock tickslock;
 uint ticks;
-struct spinlock schedlock;
-int schedlocked; // 0: UNLOCKED, 1: LOCKED
 
 void
 tvinit(void)
@@ -28,7 +27,6 @@ tvinit(void)
   SETGATE(idt[T_SCHEDUNLOCK], 1, SEG_KCODE<<3, vectors[T_SCHEDUNLOCK], DPL_USER);
 
   initlock(&tickslock, "time");
-  initlock(&schedlock, "sched");
 }
 
 void
@@ -52,13 +50,13 @@ trap(struct trapframe *tf)
   }
 
   if(tf->trapno == T_SCHEDLOCK) {
-    if(myproc()->killed || schedlocked)
+    if(myproc()->killed || schedlock.locked)
       exit();
     schedulerLock(STUID);
     return;
   }
   if(tf->trapno == T_SCHEDUNLOCK) {
-    if(myproc()->killed || !schedlocked)
+    if(myproc()->killed || !schedlock.locked)
       exit();
     schedulerUnlock(STUID);
     return;
@@ -122,7 +120,7 @@ trap(struct trapframe *tf)
   // If interrupts were on while locks held, would need to check nlock.
   if(myproc() && myproc()->state == RUNNING &&
      tf->trapno == T_IRQ0+IRQ_TIMER) {
-      if(ticks == 100 && schedlocked)
+      if(ticks == 100 && schedlock.locked)
         schedulerUnlock(STUID);
       yield();
   }

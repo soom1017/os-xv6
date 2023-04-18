@@ -6,6 +6,8 @@
 #include "memlayout.h"
 #include "mmu.h"
 #include "proc.h"
+#include "spinlock.h"
+#include "schedulerlock.h"
 
 int
 sys_fork(void)
@@ -120,7 +122,7 @@ sys_schedulerLock(void) {
 
   if(argint(0, &password) < 0)
     return -1;
-  if(schedlocked)
+  if(schedlock.locked)
     return -1;
   schedulerLock(password);
   return 0;
@@ -132,7 +134,7 @@ sys_schedulerUnlock(void) {
 
   if(argint(0, &password) < 0)
     return -1;
-  if(!schedlocked)
+  if(!schedlock.locked)
     return -1;
   schedulerUnlock(password);
   return 0;
