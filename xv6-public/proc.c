@@ -338,9 +338,18 @@ scheduler(void)
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
-    uint min_arrival;
+    int min_arrival;
     struct proc* min_arrival_p;
     int found;
+    // Check Scheduler Lock
+    if(schedlocked) {
+      if(myproc()->state != RUNNABLE)
+        schedulerUnlock(STUID);
+      else {
+        min_arrival_p = myproc();
+        goto found;
+      }
+    }
     for (qlevel = 0; qlevel < NQUEUE - 1; qlevel++) {
       found = 0;
       for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
@@ -422,7 +431,7 @@ sched(void)
 void 
 quicksort(struct proc* arr, int low, int high) {
   if (low < high) {
-    uint pivot = arr[high].arrival;
+    int pivot = arr[high].arrival;
     int i = low - 1;
     for (int j = low; j <= high - 1; j++) {
       if (arr[j].arrival <= pivot) {
@@ -459,6 +468,7 @@ yield(void)
     else {
       // queue 레벨 조정
       curproc->qlevel++;
+      curproc->arrival = ticks + 64;
     }
     curproc->tick = 0;
   }
@@ -469,18 +479,21 @@ yield(void)
   if(ticks == 100) {
     struct proc* p;
     for(p=ptable.proc; p<&ptable.proc[NPROC]; p++)
-      p->arrival += p->qlevel * 200;    // 0 <= arrival <= 164
+      p->arrival += p->qlevel * 200;    // arrival <= 164
 
     quicksort(ptable.proc, 0, NPROC - 1);
 
-    for(uint i=0; i<NPROC; i++) {
+    for(int i=0; i<NPROC; i++) {
       p = &ptable.proc[i];
       p->qlevel = L0;
       p->tick = 0;
+      p->priority = 3;
       p->arrival = i;
     }
   }
+  acquire(&tickslock);
   ticks = 0;
+  release(&tickslock);
   sched();
   release(&ptable.lock);
 }
@@ -625,4 +638,69 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+int
+getLevel(void) {
+  return myproc()->qlevel;
+}
+
+void
+setPriority(int pid, int priority) {
+  struct proc* p;
+
+  acquire(&ptable.lock);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->pid == pid)
+      p->priority = priority;
+  }
+  release(&ptable.lock);
+}
+
+void
+schedulerLock(int password) {
+  if(password != STUID) {
+    struct proc* p = myproc();
+    cprintf("PID: %d, TIME QUANTUM: %d, QUEUE LEVEL: L%d", p->pid, p->tick, p->qlevel);
+    exit();
+  }
+  acquire(&schedlock);
+  schedlocked = 1;
+  release(&schedlock);
+}
+
+void
+schedulerUnlock(int password) {
+  if(password != STUID) {
+    struct proc* p = myproc();
+    cprintf("PID: %d, TIME QUANTUM: %d, QUEUE LEVEL: L%d", p->pid, p->tick, p->qlevel);
+    exit();
+  }
+  struct proc* p;
+  int min_arrival;
+  int found = 0;
+  // 현재 L0 큐의 맨앞 프로세스의 도착시간 계산 -> 그것보다 1 작게 해서 맨앞으로
+  for(p=ptable.proc; p<&ptable.proc[NPROC]; p++) {
+    if(p->qlevel != L0)
+      continue;
+    if(found > 0 && min_arrival <= p->arrival)
+      continue;
+    min_arrival = p->arrival;
+    found = 1;
+  }
+  // qlevel, tick, priority, arrival 초기화
+  acquire(&ptable.lock);
+  struct proc* curproc = myproc();
+  curproc->qlevel = L0;
+  curproc->tick = 0;
+  curproc->priority = 3;
+  if(found)
+    curproc->arrival = min_arrival - 1;
+  else
+    curproc->arrival = -1;
+  release(&ptable.lock);
+
+  acquire(&schedlock);
+  schedlocked = 0;
+  release(&schedlock);
 }

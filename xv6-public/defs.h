@@ -120,7 +120,11 @@ void            userinit(void);
 int             wait(void);
 void            wakeup(void*);
 void            yield(void);
-void            quicksort(struct proc* arr, int low, int high);
+void            quicksort(struct proc*, int, int);
+int             getLevel(void);
+void            setPriority(int, int);
+void            schedulerLock(int);
+void            schedulerUnlock(int);
 
 // swtch.S
 void            swtch(struct context**, struct context*);
@@ -163,8 +167,10 @@ void            timerinit(void);
 // trap.c
 void            idtinit(void);
 extern uint     ticks;
+extern int      schedlocked;
 void            tvinit(void);
 extern struct spinlock tickslock;
+extern struct spinlock schedlock;
 
 // uart.c
 void            uartinit(void);

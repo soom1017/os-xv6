@@ -13,6 +13,8 @@ struct gatedesc idt[256];
 extern uint vectors[];  // in vectors.S: array of 256 entry pointers
 struct spinlock tickslock;
 uint ticks;
+struct spinlock schedlock;
+int schedlocked; // 0: UNLOCKED, 1: LOCKED
 
 void
 tvinit(void)
@@ -22,8 +24,11 @@ tvinit(void)
   for(i = 0; i < 256; i++)
     SETGATE(idt[i], 0, SEG_KCODE<<3, vectors[i], 0);
   SETGATE(idt[T_SYSCALL], 1, SEG_KCODE<<3, vectors[T_SYSCALL], DPL_USER);
+  SETGATE(idt[T_SCHEDLOCK], 1, SEG_KCODE<<3, vectors[T_SCHEDLOCK], DPL_USER);
+  SETGATE(idt[T_SCHEDUNLOCK], 1, SEG_KCODE<<3, vectors[T_SCHEDUNLOCK], DPL_USER);
 
   initlock(&tickslock, "time");
+  initlock(&schedlock, "sched");
 }
 
 void
@@ -43,6 +48,19 @@ trap(struct trapframe *tf)
     syscall();
     if(myproc()->killed)
       exit();
+    return;
+  }
+
+  if(tf->trapno == T_SCHEDLOCK) {
+    if(myproc()->killed || schedlocked)
+      exit();
+    schedulerLock(STUID);
+    return;
+  }
+  if(tf->trapno == T_SCHEDUNLOCK) {
+    if(myproc()->killed || !schedlocked)
+      exit();
+    schedulerUnlock(STUID);
     return;
   }
 
@@ -103,8 +121,11 @@ trap(struct trapframe *tf)
   // Force process to give up CPU on clock tick.
   // If interrupts were on while locks held, would need to check nlock.
   if(myproc() && myproc()->state == RUNNING &&
-     tf->trapno == T_IRQ0+IRQ_TIMER)
-    yield();
+     tf->trapno == T_IRQ0+IRQ_TIMER) {
+      if(ticks == 100 && schedlocked)
+        schedulerUnlock(STUID);
+      yield();
+  }
 
   // Check if the process has been killed since we yielded
   if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)

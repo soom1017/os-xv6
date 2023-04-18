@@ -54,7 +54,7 @@ struct proc {
   uint priority;               // 우선순위 값
   uint tick;                   // 지금껏 사용한 tick
   enum procqlevel qlevel;      // 프로세스가 속한 큐 레벨
-  uint arrival;                // 도착시간
+  int arrival;                // 도착시간
 };
 
 // Process memory is laid out contiguously, low addresses first:
