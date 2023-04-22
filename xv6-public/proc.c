@@ -13,8 +13,8 @@ struct {
   struct proc proc[NPROC];
 } ptable;
 
-struct schedulerlock schedlock;
-int n;
+struct schedulerlock schedlock;     // scheduler lock 관련 구조체 변수
+int n;                              // priority boosting 횟수
 static struct proc *initproc;
 
 int nextpid = 1;
@@ -96,7 +96,7 @@ found:
   p->priority = 3;
   p->tick = 0;
   p->qlevel = L0;
-  p->arrival = ticks + n * 600;
+  p->arrival = ticks + n * 300;
 
   release(&ptable.lock);
 
@@ -394,6 +394,7 @@ found:
     c->proc = min_arrival_p;
     switchuvm(min_arrival_p);
     min_arrival_p->state = RUNNING;
+    min_arrival_p->tick++;
 
     swtch(&(c->scheduler), min_arrival_p->context);
     switchkvm();
@@ -443,7 +444,7 @@ yield(void)
   acquire(&ptable.lock);  //DOC: yieldlock
   // 3-level MLFQ
   struct proc* curproc = myproc();
-  if (++curproc->tick == 2 * myproc()->qlevel + 4) {
+  if (curproc->tick == 2 * myproc()->qlevel + 4) {
     if(curproc->qlevel == L2) {
       // priority 조정
       if(curproc->priority > 0)
@@ -455,7 +456,7 @@ yield(void)
     }
     curproc->tick = 0;
   }
-  curproc->arrival = ticks + n * 600;
+  curproc->arrival = ticks + n * 300;
   curproc->state = RUNNABLE;
 
   // priority boosting
@@ -464,8 +465,6 @@ yield(void)
     for(p=ptable.proc; p<&ptable.proc[NPROC]; p++) {
       if (p->state == RUNNABLE) {
         p->arrival += p->qlevel * 100;    // arrival <= 100
-        if(p->qlevel == NQUEUE - 1)
-          p->arrival += p->priority * 100;
         p->qlevel = L0;
         p->tick = 0;
         p->priority = 3;
@@ -550,7 +549,7 @@ wakeup1(void *chan)
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     if(p->state == SLEEPING && p->chan == chan) {
-      p->arrival = ticks + n * 600;
+      p->arrival = ticks + n * 300;
       p->state = RUNNABLE;
     }
 }
@@ -643,14 +642,14 @@ setPriority(int pid, int priority) {
 
 void
 schedulerLock(int password) {
+  struct proc* p = myproc();
   if(password != STUID) {
-    struct proc* p = myproc();
     cprintf("PID: %d, TIME QUANTUM: %d, QUEUE LEVEL: L%d", p->pid, p->tick, p->qlevel);
     exit();
   }
   acquire(&schedlock.lock);
   schedlock.locked = 1;
-  schedlock.p = myproc();
+  schedlock.p = p;
   release(&schedlock.lock);
 }
 
