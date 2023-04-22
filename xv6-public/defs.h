@@ -121,6 +121,7 @@ void            userinit(void);
 int             wait(void);
 void            wakeup(void*);
 void            yield(void);
+void            priority_boost(void);
 int             getLevel(void);
 void            setPriority(int, int);
 void            schedulerLock(int);

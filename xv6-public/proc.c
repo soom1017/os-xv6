@@ -11,10 +11,11 @@
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
+  int final_arrival[NQUEUE];        // 각 큐의 맨 뒤 프로세스의 도착시간
 } ptable;
 
 struct schedulerlock schedlock;     // scheduler lock 관련 구조체 변수
-int n;                              // priority boosting 횟수
+int arrival_correction;             // ticks + arrival_correction = 프로세스의 실제 도착시간
 static struct proc *initproc;
 
 int nextpid = 1;
@@ -96,7 +97,8 @@ found:
   p->priority = 3;
   p->tick = 0;
   p->qlevel = L0;
-  p->arrival = ticks + n * 300;
+  p->arrival = ticks + arrival_correction;
+  ptable.final_arrival[L0] = p->arrival;
 
   release(&ptable.lock);
 
@@ -456,27 +458,42 @@ yield(void)
     }
     curproc->tick = 0;
   }
-  curproc->arrival = ticks + n * 300;
+  curproc->arrival = ticks + arrival_correction;
+  ptable.final_arrival[curproc->qlevel] = curproc->arrival;
   curproc->state = RUNNABLE;
 
   // priority boosting
-  if(ticks >= 100) {
-    struct proc* p;
-    for(p=ptable.proc; p<&ptable.proc[NPROC]; p++) {
-      if (p->state == RUNNABLE) {
-        p->arrival += p->qlevel * 100;    // arrival <= 100
-        p->qlevel = L0;
-        p->tick = 0;
-        p->priority = 3;
-      }
-    }
-    acquire(&tickslock);
-    ticks = 0;
-    n++;
-    release(&tickslock);
-  }
+  if(ticks >= 100)
+    priority_boost();
   sched();
   release(&ptable.lock);
+}
+
+void 
+priority_boost(void) {
+  struct proc* p;
+  // 이전 큐의 마지막 도착시간을 더해줌으로써,
+  // 각 큐의 프로세스들을 순서대로 L0에 이어붙일 수 있다.
+  for(p=ptable.proc; p<&ptable.proc[NPROC]; p++) {
+    if (p->state == RUNNABLE) {
+      if(p->qlevel == L1)
+        p->arrival += ptable.final_arrival[L0];
+      if(p->qlevel == L2)
+        p->arrival += ptable.final_arrival[L0] + ptable.final_arrival[L1];
+      p->qlevel = L0;
+      p->tick = 0;
+      p->priority = 3;
+    }
+  }
+  // 각 큐의 마지막 도착시간과, 그에 따라 도착시간 보정치를 업데이트하고 
+  // global tick을 초기화한다.
+  acquire(&tickslock);
+  ptable.final_arrival[L0] = ptable.final_arrival[L0] + ptable.final_arrival[L1] + ptable.final_arrival[L2];
+  ptable.final_arrival[L1] = 0;
+  ptable.final_arrival[L2] = 0;
+  arrival_correction = ptable.final_arrival[L0];
+  ticks = 0;
+  release(&tickslock);
 }
 
 // A fork child's very first scheduling by scheduler()
@@ -549,7 +566,8 @@ wakeup1(void *chan)
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     if(p->state == SLEEPING && p->chan == chan) {
-      p->arrival = ticks + n * 300;
+      p->arrival = ticks + arrival_correction;
+      ptable.final_arrival[p->qlevel] = p->arrival;
       p->state = RUNNABLE;
     }
 }
@@ -651,6 +669,11 @@ schedulerLock(int password) {
   schedlock.locked = 1;
   schedlock.p = p;
   release(&schedlock.lock);
+  // 도착시간은 그대로 이어서 증가하며, global tick만 초기화
+  acquire(&tickslock);
+  arrival_correction += ticks;
+  ticks = 0;
+  release(&tickslock);
 }
 
 void
@@ -661,13 +684,13 @@ schedulerUnlock(int password) {
     exit();
   }
   struct proc* p;
-  int min_arrival;
+  int min_arrival = 0;
   int found = 0;
   // 현재 L0 큐의 맨앞 프로세스의 도착시간 계산 -> 그것보다 1 작게 해서 맨앞으로
   for(p=ptable.proc; p<&ptable.proc[NPROC]; p++) {
     if(p->qlevel != L0)
       continue;
-    if(found > 0 && min_arrival <= p->arrival)
+    if(found && min_arrival <= p->arrival)
       continue;
     min_arrival = p->arrival;
     found = 1;
@@ -678,10 +701,7 @@ schedulerUnlock(int password) {
   curproc->qlevel = L0;
   curproc->tick = 0;
   curproc->priority = 3;
-  if(found)
-    curproc->arrival = min_arrival - 1;
-  else
-    curproc->arrival = -1;
+  curproc->arrival = min_arrival - 1;
   release(&ptable.lock);
 
   acquire(&schedlock.lock);
