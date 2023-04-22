@@ -126,6 +126,7 @@ int             getLevel(void);
 void            setPriority(int, int);
 void            schedulerLock(int);
 void            schedulerUnlock(int);
+void            schedulerUnlockF(void);
 extern struct schedulerlock schedlock;
 
 // swtch.S

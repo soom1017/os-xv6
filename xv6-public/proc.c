@@ -260,6 +260,10 @@ exit(void)
 
   acquire(&ptable.lock);
 
+  // schedulerLock을 호출한 프로세스가 exit할 때는 반드시 Unlock해준다.
+  if(schedlock.locked && schedlock.p == curproc)
+    schedulerUnlock(STUID);
+
   // Parent might be sleeping in wait().
   wakeup1(curproc->parent);
 
@@ -339,24 +343,19 @@ scheduler(void)
   c->proc = 0;
   
   for(;;){
-    struct proc* min_arrival_p;
-    // Check Scheduler Lock
-    if(schedlock.locked) {
-      if(schedlock.p->state != RUNNABLE)
-        schedulerUnlock(STUID);
-      else {
-        sti();
-        acquire(&ptable.lock);
-        min_arrival_p = schedlock.p;
-        goto found;
-      }
-    }
-
     // Enable interrupts on this processor.
     sti();
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
+
+    struct proc* min_arrival_p;
+    // schedulerLock을 잡은 프로세스가 있는지 확인 후, 있다면 우선적으로 할당한다.
+    if(schedlock.locked && schedlock.p->state == RUNNABLE) {
+      min_arrival_p = schedlock.p;
+      goto found;
+    }
+    // L0와 L1 큐를 도착시간 순으로 확인한다.
     int min_arrival;
     int found;
     for (qlevel = 0; qlevel < NQUEUE - 1; qlevel++) {
@@ -374,7 +373,7 @@ scheduler(void)
         goto found;
       }
     }
-    // L2 scheduling은 따로 구현 - priority 고려하기
+    // L2 큐를 priority와 도착시간 순으로 확인한다.
     uint min_priority = 4;
     found = 0;
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
@@ -664,12 +663,13 @@ schedulerLock(int password) {
   if(password != STUID) {
     cprintf("PID: %d, TIME QUANTUM: %d, QUEUE LEVEL: L%d", p->pid, p->tick, p->qlevel);
     exit();
+    return;
   }
   acquire(&schedlock.lock);
   schedlock.locked = 1;
   schedlock.p = p;
   release(&schedlock.lock);
-  // 도착시간은 그대로 이어서 증가하며, global tick만 초기화
+  // 도착시간은 그대로 이어서 증가하며, global tick만 초기화한다.
   acquire(&tickslock);
   arrival_correction += ticks;
   ticks = 0;
@@ -678,15 +678,25 @@ schedulerLock(int password) {
 
 void
 schedulerUnlock(int password) {
+  if(myproc() != schedlock.p)
+    return;
   if(password != STUID) {
     struct proc* p = schedlock.p;
     cprintf("PID: %d, TIME QUANTUM: %d, QUEUE LEVEL: L%d", p->pid, p->tick, p->qlevel);
     exit();
+    return;
   }
+  schedulerUnlockF();
+}
+
+// Lock을 호출한 프로세스가 직접 unlock을 호출하지 못하지만, MLFQ로 돌아가야 하는 경우 Unlock을 F(force)한다.
+// ex. global tick == 100
+void
+schedulerUnlockF(void) {
   struct proc* p;
   int min_arrival = 0;
   int found = 0;
-  // 현재 L0 큐의 맨앞 프로세스의 도착시간 계산 -> 그것보다 1 작게 해서 맨앞으로
+  // L0 큐의 맨앞 프로세스의 도착시간을 확인하여, 그보다 더 앞에 둔다.
   for(p=ptable.proc; p<&ptable.proc[NPROC]; p++) {
     if(p->qlevel != L0)
       continue;
@@ -695,16 +705,17 @@ schedulerUnlock(int password) {
     min_arrival = p->arrival;
     found = 1;
   }
-  // qlevel, tick, priority, arrival 초기화
+  // L0의 맨 앞으로 이동, time quantum 초기화, priority 재조정을 진행한다.
   acquire(&ptable.lock);
   struct proc* curproc = schedlock.p;
   curproc->qlevel = L0;
+  curproc->arrival = min_arrival - 1;
   curproc->tick = 0;
   curproc->priority = 3;
-  curproc->arrival = min_arrival - 1;
   release(&ptable.lock);
 
   acquire(&schedlock.lock);
   schedlock.locked = 0;
+  schedlock.p = 0;
   release(&schedlock.lock);
 }
