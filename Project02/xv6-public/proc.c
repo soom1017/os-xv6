@@ -532,3 +532,23 @@ procdump(void)
     cprintf("\n");
   }
 }
+
+// Set memory limit of a process.
+int
+setmemorylimit(int pid, int limit)
+{
+  struct proc *p;
+
+  acquire(&ptable.lock);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->pid == pid){
+      // Wake process from sleep if necessary.
+      if(p->sz <= limit)
+        p->memlim = limit;
+      release(&ptable.lock);
+      return 0;
+    }
+  }
+  release(&ptable.lock);
+  return -1;
+}
