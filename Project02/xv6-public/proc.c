@@ -162,6 +162,8 @@ growproc(int n)
   struct proc *curproc = myproc();
 
   sz = curproc->sz;
+  if(curproc->memlim != 0 && sz + n > curproc->memlim)
+    return -1;
   if(n > 0){
     if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
       return -1;
