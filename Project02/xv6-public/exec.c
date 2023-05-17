@@ -99,6 +99,7 @@ exec(char *path, char **argv)
   curproc->sz = sz;
   curproc->tf->eip = elf.entry;  // main
   curproc->tf->esp = sp;
+  curproc->stacksize = 1;
   switchuvm(curproc);
   freevm(oldpgdir);
   return 0;
@@ -124,6 +125,9 @@ exec2(char *path, char **argv, int stacksize)
   struct proghdr ph;
   pde_t *pgdir, *oldpgdir;
   struct proc *curproc = myproc();
+
+  if(stacksize < 1 || stacksize > 100)
+    return -1;
 
   begin_op();
 
@@ -205,6 +209,7 @@ exec2(char *path, char **argv, int stacksize)
   curproc->sz = sz;
   curproc->tf->eip = elf.entry;  // main
   curproc->tf->esp = sp;
+  curproc->stacksize = stacksize;
   switchuvm(curproc);
   freevm(oldpgdir);
   return 0;

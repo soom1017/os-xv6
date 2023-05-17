@@ -543,14 +543,91 @@ setmemorylimit(int pid, int limit)
 
   acquire(&ptable.lock);
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if(p->pid == pid){
-      // Wake process from sleep if necessary.
-      if(p->sz <= limit)
-        p->memlim = limit;
+    if(p->pid == pid && p->sz <= limit){
+      p->memlim = limit;
       release(&ptable.lock);
       return 0;
     }
   }
   release(&ptable.lock);
   return -1;
+}
+
+// Print RUNNABLE processes in ready queue.
+void
+listprocs(void)
+{
+  struct proc *p;
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->state == RUNNABLE || p->state == RUNNING) {
+      if(p->thread == 0)
+        cprintf("name: %s\npid: %d\nnumber of stack pages: %d\nallocated memory: %d bytes\nmemory limit: %d bytes\n", 
+                 p->name, p->pid, p->stacksize, p->sz, p->memlim);
+    }
+  }
+}
+
+//Thread APIs
+// Create a thread.
+int
+thread_create(thread_t *thread, void *(*start_routine)(void *), void *arg) 
+{
+  int i;
+  struct proc *np;
+  struct proc *curproc = myproc();
+
+  // Allocate process.
+  if((np = allocproc()) == 0){
+    return -1;
+  }
+
+  // Share process state with proc.
+  acquire(&ptable.lock);
+
+  np->pid = curproc->pid;
+  np->thread = *thread;
+  np->pgdir = curproc->pgdir;
+  np->sz = curproc->sz;
+  np->parent = curproc->parent;
+  *np->tf = *curproc->tf;
+
+  // Set start routine of this thread.
+  curproc->tf->eip = (uint)start_routine;
+  curproc->tf->esp -= sizeof(uint);
+  curproc->tf->esp = (uint)arg;
+
+  release(&ptable.lock);
+
+  // Clear %eax.
+  np->tf->eax = 0;
+
+  for(i = 0; i < NOFILE; i++)
+    if(curproc->ofile[i])
+      np->ofile[i] = curproc->ofile[i];
+  np->cwd = curproc->cwd;
+
+  safestrcpy(np->name, curproc->name, sizeof(curproc->name));
+
+  acquire(&ptable.lock);
+
+  np->state = RUNNABLE;
+
+  release(&ptable.lock);
+
+  return 0;
+
+}
+
+// Exit a thread and return values.
+void
+thread_exit(void *retval)
+{
+  
+}
+
+// Wait a thread, and return values with `thread_exit`.
+int
+thread_join(thread_t thread, void **retval)
+{
+  return 0;
 }

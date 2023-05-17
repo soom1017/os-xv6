@@ -99,3 +99,10 @@ sys_setmemorylimit(void)
     return -1;
   return setmemorylimit(pid, limit);
 }
+
+int
+sys_listprocs(void)
+{
+  listprocs();
+  return 0;
+}
