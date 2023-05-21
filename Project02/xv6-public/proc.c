@@ -645,16 +645,94 @@ thread_create(thread_t *thread, void *(*start_routine)(void *), void *arg)
 
 }
 
-// Exit a thread and return values.
+// Exit a thread and save retval.
 void
 thread_exit(void *retval)
 {
-  
+  struct proc *curproc = myproc();
+  struct proc *p;
+  int fd;
+
+  if(curproc == initproc)
+    panic("init exiting");
+
+  // Lose reference to all open files.
+  for(fd = 0; fd < NOFILE; fd++){
+    if(curproc->ofile[fd]){
+      // fileclose(curproc->ofile[fd]);
+      curproc->ofile[fd] = 0;
+    }
+  }
+
+  begin_op();
+  iput(curproc->cwd);
+  end_op();
+  curproc->cwd = 0;
+
+  // Save retval in `proc`.
+  curproc->retval = retval;
+
+  acquire(&ptable.lock);
+
+  // Parent might be sleeping in wait().
+  wakeup1(curproc->parent);
+
+  // Pass abandoned children to init.
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->parent == curproc){
+      p->parent = initproc;
+      if(p->state == ZOMBIE)
+        wakeup1(initproc);
+    }
+  }
+
+  // Jump into the scheduler, never to return.
+  curproc->state = ZOMBIE;
+  sched();
+  panic("zombie exit");
 }
 
-// Wait a thread, and return values with `thread_exit`.
+// Wait a thread, and return retval.
 int
 thread_join(thread_t thread, void **retval)
 {
-  return 0;
+  struct proc *p;
+  int found, pid;
+  struct proc *curproc = myproc();
+  pid = curproc->pid;
+  
+  acquire(&ptable.lock);
+  for(;;){
+    // Scan through table looking for exited children.
+    found = 0;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->pid != pid || p->parent != curproc)
+        continue;
+      found = 1;
+      if(p->state == ZOMBIE){
+        // Return retval.
+        *retval = p->retval;
+
+        kfree(p->kstack);
+        p->kstack = 0;
+        // freevm(p->pgdir);
+        p->pid = 0;
+        p->parent = 0;
+        p->name[0] = 0;
+        p->killed = 0;
+        p->state = UNUSED;
+        release(&ptable.lock);
+        return 0;
+      }
+    }
+
+    // No point waiting if we don't have any children.
+    if(!found || curproc->killed){
+      release(&ptable.lock);
+      return -1;
+    }
+
+    // Wait for children to exit.  (See wakeup1 call in proc_exit.)
+    sleep(curproc, &ptable.lock);  //DOC: wait-sleep
+  }
 }
