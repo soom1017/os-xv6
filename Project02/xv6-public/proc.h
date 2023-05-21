@@ -41,8 +41,7 @@ struct proc {
   char *kstack;                // Bottom of kernel stack for this process
   enum procstate state;        // Process state
   int pid;                     // Process ID
-  thread_t thread;             // Thread ID
-  struct proc *parent;         // Parent process
+  struct proc *parent;         // Parent process, which is main thread if sub-thread
   struct trapframe *tf;        // Trap frame for current syscall
   struct context *context;     // swtch() here to run process
   void *chan;                  // If non-zero, sleeping on chan
@@ -53,6 +52,9 @@ struct proc {
 
   int stacksize;               // Number of stack page
   int memlim;                  // Memory limit of this process
+
+  thread_t thread;             // Thread ID (default: 0 if main thread)
+  void *retval;                // Thread's return value, in `thread_exit` call
 };
 
 // Process memory is laid out contiguously, low addresses first:

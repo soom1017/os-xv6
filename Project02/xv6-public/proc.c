@@ -15,6 +15,7 @@ struct {
 static struct proc *initproc;
 
 int nextpid = 1;
+int nexttid = 1;
 extern void forkret(void);
 extern void trapret(void);
 
@@ -568,45 +569,71 @@ listprocs(void)
 }
 
 //Thread APIs
-// Create a thread.
+// Create a light-weight process, (thread).
 int
 thread_create(thread_t *thread, void *(*start_routine)(void *), void *arg) 
 {
   int i;
   struct proc *np;
   struct proc *curproc = myproc();
+  struct proc *main_thread;
+  if(curproc->thread == 0)
+    main_thread = curproc;
+  else
+    main_thread = curproc->parent;
+
+  pde_t *pgdir = main_thread->pgdir;
+  uint sz = main_thread->sz;
+  uint sp;
+  uint ustack[2];
 
   // Allocate process.
   if((np = allocproc()) == 0){
     return -1;
   }
 
-  // Share process state with proc.
+  // Share process state with main thread.
   acquire(&ptable.lock);
 
-  np->pid = curproc->pid;
-  np->thread = *thread;
-  np->pgdir = curproc->pgdir;
-  np->sz = curproc->sz;
-  np->parent = curproc->parent;
-  *np->tf = *curproc->tf;
+  np->pid = main_thread->pid;
+  np->thread = nexttid++;
+  *thread = np->thread;
+  np->parent = main_thread;
+  *np->tf = *main_thread->tf;
+  
+  // Allocate its own user stack, in main thread va.
+  sz = PGROUNDUP(sz);
+  if((sz = allocuvm(pgdir, sz, sz + 2*PGSIZE)) == 0)
+    return -1;
+  clearpteu(pgdir, (char*)(sz - 2*PGSIZE));
+  main_thread->sz = sz;
 
-  // Set start routine of this thread.
-  curproc->tf->eip = (uint)start_routine;
-  curproc->tf->esp -= sizeof(uint);
-  curproc->tf->esp = (uint)arg;
+  sp = sz - 8;
 
-  release(&ptable.lock);
+  ustack[0] = 0xffffffff;  // fake return PC
+  ustack[1] = (uint)arg;
+
+  if(copyout(pgdir, sp, ustack, 8) < 0)
+    return -1;
+
+  np->pgdir = pgdir;
+  np->sz = sz;
 
   // Clear %eax.
   np->tf->eax = 0;
 
-  for(i = 0; i < NOFILE; i++)
-    if(curproc->ofile[i])
-      np->ofile[i] = curproc->ofile[i];
-  np->cwd = curproc->cwd;
+  // Set start routine of this thread.
+  np->tf->eip = (uint)start_routine;
+  np->tf->esp = sp;
 
-  safestrcpy(np->name, curproc->name, sizeof(curproc->name));
+  release(&ptable.lock);
+
+  for(i = 0; i < NOFILE; i++)
+    if(main_thread->ofile[i])
+      np->ofile[i] = main_thread->ofile[i];
+  np->cwd = main_thread->cwd;
+
+  safestrcpy(np->name, main_thread->name, sizeof(main_thread->name));
 
   acquire(&ptable.lock);
 
