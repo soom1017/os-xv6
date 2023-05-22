@@ -123,6 +123,7 @@ void            wakeup(void*);
 void            yield(void);
 int             setmemorylimit(int, int);
 void            listprocs(void);
+void            subthread_close(int);
 
 // swtch.S
 void            swtch(struct context**, struct context*);

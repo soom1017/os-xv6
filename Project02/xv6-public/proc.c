@@ -89,6 +89,11 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  p->stacksize = 1;
+  p->memlim = 0;
+  // Default thread id is 0 (main thread).
+  // If necessary, will be replaced. (see thread_create)
+  p->thread = 0;
 
   release(&ptable.lock);
 
@@ -161,19 +166,29 @@ growproc(int n)
 {
   uint sz;
   struct proc *curproc = myproc();
+  struct proc *main_thread;
+  if(curproc->thread == 0)
+    main_thread = curproc;
+  else
+    main_thread = curproc->parent;
 
-  sz = curproc->sz;
-  if(curproc->memlim != 0 && sz + n > curproc->memlim)
+  acquire(&ptable.lock);
+
+  sz = main_thread->sz;
+  if(main_thread->memlim != 0 && sz + n > main_thread->memlim)
     return -1;
   if(n > 0){
-    if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
+    if((sz = allocuvm(main_thread->pgdir, sz, sz + n)) == 0)
       return -1;
   } else if(n < 0){
-    if((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)
+    if((sz = deallocuvm(main_thread->pgdir, sz, sz + n)) == 0)
       return -1;
   }
-  curproc->sz = sz;
+  main_thread->sz = sz;
   switchuvm(curproc);
+
+  release(&ptable.lock);
+
   return 0;
 }
 
@@ -186,6 +201,11 @@ fork(void)
   int i, pid;
   struct proc *np;
   struct proc *curproc = myproc();
+  struct proc *main_thread;
+  if(curproc->thread == 0)
+    main_thread = curproc;
+  else
+    main_thread = curproc->parent;
 
   // Allocate process.
   if((np = allocproc()) == 0){
@@ -200,7 +220,10 @@ fork(void)
     return -1;
   }
   np->sz = curproc->sz;
-  np->parent = curproc;
+  // If sub thread forks another process,
+  // make "its main thread" be the process's parent.
+  np->parent = main_thread;
+  np->stacksize = main_thread->stacksize;
   *np->tf = *curproc->tf;
 
   // Clear %eax so that fork returns 0 in the child.
@@ -236,6 +259,10 @@ exit(void)
 
   if(curproc == initproc)
     panic("init exiting");
+
+  // Sub-threads must be exited with `thread_exit`.
+  if(curproc->thread != 0)
+    panic("sub thread exiting");
 
   // Close all open files.
   for(fd = 0; fd < NOFILE; fd++){
@@ -544,7 +571,7 @@ setmemorylimit(int pid, int limit)
 
   acquire(&ptable.lock);
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if(p->pid == pid && p->sz <= limit){
+    if(p->pid == pid && p->thread == 0 && p->sz <= limit){
       p->memlim = limit;
       release(&ptable.lock);
       return 0;
@@ -558,6 +585,7 @@ setmemorylimit(int pid, int limit)
 void
 listprocs(void)
 {
+  acquire(&ptable.lock);
   struct proc *p;
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
     if(p->state == RUNNABLE || p->state == RUNNING) {
@@ -566,6 +594,8 @@ listprocs(void)
                  p->name, p->pid, p->stacksize, p->sz, p->memlim);
     }
   }
+  cprintf("-----------------\n");
+  release(&ptable.lock);
 }
 
 //Thread APIs
@@ -645,41 +675,41 @@ thread_create(thread_t *thread, void *(*start_routine)(void *), void *arg)
 
 }
 
-// Exit a thread and save retval.
+// Force thread's exit, in another thread.
+// See `thread_exit`, `subthread_close`.
 void
-thread_exit(void *retval)
+thread_exit_f(struct proc* proc, void *retval)
 {
-  struct proc *curproc = myproc();
   struct proc *p;
   int fd;
 
-  if(curproc == initproc)
+  if(proc == initproc)
     panic("init exiting");
 
   // Lose reference to all open files.
   for(fd = 0; fd < NOFILE; fd++){
-    if(curproc->ofile[fd]){
-      // fileclose(curproc->ofile[fd]);
-      curproc->ofile[fd] = 0;
+    if(proc->ofile[fd]){
+      fileclose(proc->ofile[fd]);
+      proc->ofile[fd] = 0;
     }
   }
 
   begin_op();
-  iput(curproc->cwd);
+  iput(proc->cwd);
   end_op();
-  curproc->cwd = 0;
+  proc->cwd = 0;
 
   // Save retval in `proc`.
-  curproc->retval = retval;
+  proc->retval = retval;
 
   acquire(&ptable.lock);
 
   // Parent might be sleeping in wait().
-  wakeup1(curproc->parent);
+  wakeup1(proc->parent);
 
   // Pass abandoned children to init.
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if(p->parent == curproc){
+    if(p->parent == proc){
       p->parent = initproc;
       if(p->state == ZOMBIE)
         wakeup1(initproc);
@@ -687,9 +717,34 @@ thread_exit(void *retval)
   }
 
   // Jump into the scheduler, never to return.
-  curproc->state = ZOMBIE;
+  proc->state = ZOMBIE;
+}
+
+// Exit a thread and save retval.
+void
+thread_exit(void *retval)
+{
+  struct proc *curproc = myproc();
+  
+  thread_exit_f(curproc, retval);
+
   sched();
   panic("zombie exit");
+}
+
+// Force thread's close and return, in another thread.
+// See `thread_join`, `subthread_close`.
+void
+thread_join_f(struct proc* p)
+{
+  kfree(p->kstack);
+  p->kstack = 0;
+  // freevm(p->pgdir);
+  p->pid = 0;
+  p->parent = 0;
+  p->name[0] = 0;
+  p->killed = 0;
+  p->state = UNUSED;
 }
 
 // Wait a thread, and return retval.
@@ -706,22 +761,14 @@ thread_join(thread_t thread, void **retval)
     // Scan through table looking for exited children.
     found = 0;
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->pid != pid || p->parent != curproc)
+      if(p->pid != pid || p->thread != thread || p->parent != curproc)
         continue;
       found = 1;
       if(p->state == ZOMBIE){
         // Return retval.
         *retval = p->retval;
 
-        kfree(p->kstack);
-        p->kstack = 0;
-        // freevm(p->pgdir);
-        p->pid = 0;
-        p->parent = 0;
-        p->name[0] = 0;
-        p->killed = 0;
-        p->state = UNUSED;
-        release(&ptable.lock);
+        thread_join_f(p);
         return 0;
       }
     }
@@ -734,5 +781,28 @@ thread_join(thread_t thread, void **retval)
 
     // Wait for children to exit.  (See wakeup1 call in proc_exit.)
     sleep(curproc, &ptable.lock);  //DOC: wait-sleep
+  }
+}
+
+// For exec in LWP level, all threads except 1 (current thread)
+// must be exited. Current thread then be main thread.
+void
+subthread_close(int pid)
+{
+  struct proc *curproc = myproc();
+  struct proc *p;
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    // Scan threads except current thread, which is RUNNING.
+    if(p->state == RUNNABLE && p->pid == pid) {
+      if(p->thread == 0) {
+        // Current thread will be main thread.
+        curproc->parent = p->parent;
+        curproc->thread = 0;
+      }
+      thread_exit_f(p, 0);
+      thread_join_f(p);
+      // thread_exit_f acquires lock.
+      release(&ptable.lock);
+    }
   }
 }

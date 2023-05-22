@@ -19,6 +19,10 @@ exec(char *path, char **argv)
   pde_t *pgdir, *oldpgdir;
   struct proc *curproc = myproc();
 
+  // Close threads other than current thread.
+  // Current thread then be main thread.
+  subthread_close(curproc->pid);
+
   begin_op();
 
   if((ip = namei(path)) == 0){
@@ -128,6 +132,10 @@ exec2(char *path, char **argv, int stacksize)
 
   if(stacksize < 1 || stacksize > 100)
     return -1;
+
+  // Close threads other than current thread.
+  // Current thread then be main thread.
+  subthread_close(curproc->pid);
 
   begin_op();
 
