@@ -83,7 +83,8 @@ int main(int argc, char *argv[]) {
         }
         else if(!strcmp(opcode, "execute")) {
             // execute <path> <stacksize>: path의 경로에 위치한 프로그램을 stacksize 개수만큼의 스택용 페이지와 함께 실행
-            char *path = arg0;
+            char* path;
+            strcpy(path, arg0);
             int stacksize = atoi(arg1);
             if(fork1() == 0) {
                 if(exec2(path, &path, stacksize) == -1)
