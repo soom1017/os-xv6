@@ -585,7 +585,6 @@ setmemorylimit(int pid, int limit)
 void
 listprocs(void)
 {
-  acquire(&ptable.lock);
   struct proc *p;
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
     if(p->state == RUNNABLE || p->state == RUNNING) {
@@ -594,8 +593,6 @@ listprocs(void)
                  p->name, p->pid, p->stacksize, p->sz, p->memlim);
     }
   }
-  cprintf("-----------------\n");
-  release(&ptable.lock);
 }
 
 //Thread APIs
