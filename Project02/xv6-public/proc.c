@@ -657,8 +657,8 @@ thread_create(thread_t *thread, void *(*start_routine)(void *), void *arg)
 
   for(i = 0; i < NOFILE; i++)
     if(main_thread->ofile[i])
-      np->ofile[i] = main_thread->ofile[i];
-  np->cwd = main_thread->cwd;
+      np->ofile[i] = filedup(main_thread->ofile[i]);
+  np->cwd = idup(main_thread->cwd);
 
   safestrcpy(np->name, main_thread->name, sizeof(main_thread->name));
 
@@ -766,6 +766,7 @@ thread_join(thread_t thread, void **retval)
         *retval = p->retval;
 
         thread_join_f(p);
+        release(&ptable.lock);
         return 0;
       }
     }
