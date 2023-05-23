@@ -15,20 +15,40 @@ void *thread(void *arg) {
 }
 
 int main() {
-  thread_t thid;
+  thread_t thid[3];
   void *ret;
 
-  if (thread_create(&thid, thread, "thread 1") != 0) {
+  if (thread_create(&thid[0], thread, "thread 1") != 0) {
+    printf(1, "pthread_create() error");
+    exit();
+  }
+  if (thread_create(&thid[1], thread, "thread 2") != 0) {
+    printf(1, "pthread_create() error");
+    exit();
+  }
+  if (thread_create(&thid[2], thread, "thread 3") != 0) {
     printf(1, "pthread_create() error");
     exit();
   }
 
-  if (thread_join(thid, &ret) != 0) {
-    printf(1, "pthread_create() error");
+  if (thread_join(thid[0], &ret) != 0) {
+    printf(1, "pthread_join() error");
+    exit();
+  }
+  printf(1, "thread exited with '%s'\n", ret);
+
+  if (thread_join(thid[1], &ret) != 0) {
+    printf(1, "pthread_join() error");
     exit();
   }
 
   printf(1, "thread exited with '%s'\n", ret);
+  if (thread_join(thid[2], &ret) != 0) {
+    printf(1, "pthread_join() error");
+    exit();
+  }
+  printf(1, "thread exited with '%s'\n", ret);
+
   exit();
 }
 
