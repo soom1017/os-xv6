@@ -215,7 +215,7 @@ fork(void)
   }
 
   // Copy process state from proc.
-  if((np->pgdir = copyuvm(main_thread->pgdir, main_thread->sz)) == 0){
+  if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
     kfree(np->kstack);
     np->kstack = 0;
     np->state = UNUSED;
@@ -609,7 +609,7 @@ thread_create(thread_t *thread, void *(*start_routine)(void *), void *arg)
     main_thread = curproc->parent;
 
   pde_t *pgdir = main_thread->pgdir;
-  uint sz = main_thread->sz;
+  uint sz;
   uint sp;
   uint ustack[2];
 
@@ -617,7 +617,6 @@ thread_create(thread_t *thread, void *(*start_routine)(void *), void *arg)
   if((np = allocproc()) == 0){
     return -1;
   }
-  nextpid--;
 
   // Share process state with main thread.
   acquire(&ptable.lock);
@@ -627,13 +626,20 @@ thread_create(thread_t *thread, void *(*start_routine)(void *), void *arg)
   *thread = np->thread;
   np->parent = main_thread;
   *np->tf = *main_thread->tf;
+
+  release(&ptable.lock);
   
   // Allocate its own user stack, in main thread va.
+  acquire(&sbrklock);
+
+  sz = main_thread->sz;
   sz = PGROUNDUP(sz);
   if((sz = allocuvm(pgdir, sz, sz + 2*PGSIZE)) == 0)
     return -1;
   clearpteu(pgdir, (char*)(sz - 2*PGSIZE));
   main_thread->sz = sz;
+
+  release(&sbrklock);
 
   sp = sz - 8;
 
@@ -652,8 +658,6 @@ thread_create(thread_t *thread, void *(*start_routine)(void *), void *arg)
   // Set start routine of this thread.
   np->tf->eip = (uint)start_routine;
   np->tf->esp = sp;
-
-  release(&ptable.lock);
 
   for(i = 0; i < NOFILE; i++)
     if(main_thread->ofile[i])
