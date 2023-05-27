@@ -2,14 +2,31 @@
 #include "stat.h"
 #include "user.h"
 
+#define BUFFER_SIZE 1024
+
 static void
-putc(int fd, char c)
+flush(char* buffer, int* buffer_index, 
+      int fd)
 {
-  write(fd, &c, 1);
+  if (*buffer_index > 0) {
+    write(fd, buffer, *buffer_index);
+    *buffer_index = 0;
+  }
 }
 
 static void
-printint(int fd, int xx, int base, int sgn)
+putc(char* buffer, int* buffer_index, 
+     int fd, char c)
+{
+  if (*buffer_index >= BUFFER_SIZE)
+    flush(buffer, buffer_index, fd);
+
+  buffer[(*buffer_index)++] = c;
+}
+
+static void
+printint(char* buffer, int* buffer_index, 
+         int fd, int xx, int base, int sgn)
 {
   static char digits[] = "0123456789ABCDEF";
   char buf[16];
@@ -32,13 +49,16 @@ printint(int fd, int xx, int base, int sgn)
     buf[i++] = '-';
 
   while(--i >= 0)
-    putc(fd, buf[i]);
+    putc(buffer, buffer_index, fd, buf[i]);
 }
 
 // Print to the given fd. Only understands %d, %x, %p, %s.
 void
 printf(int fd, const char *fmt, ...)
 {
+  char buffer[BUFFER_SIZE];
+  int buffer_index = 0;
+
   char *s;
   int c, i, state;
   uint *ap;
@@ -51,14 +71,14 @@ printf(int fd, const char *fmt, ...)
       if(c == '%'){
         state = '%';
       } else {
-        putc(fd, c);
+        putc(buffer, &buffer_index, fd, c);
       }
     } else if(state == '%'){
       if(c == 'd'){
-        printint(fd, *ap, 10, 1);
+        printint(buffer, &buffer_index, fd, *ap, 10, 1);
         ap++;
       } else if(c == 'x' || c == 'p'){
-        printint(fd, *ap, 16, 0);
+        printint(buffer, &buffer_index, fd, *ap, 16, 0);
         ap++;
       } else if(c == 's'){
         s = (char*)*ap;
@@ -66,20 +86,22 @@ printf(int fd, const char *fmt, ...)
         if(s == 0)
           s = "(null)";
         while(*s != 0){
-          putc(fd, *s);
+          putc(buffer, &buffer_index, fd, *s);
           s++;
         }
       } else if(c == 'c'){
-        putc(fd, *ap);
+        putc(buffer, &buffer_index, fd, *ap);
         ap++;
       } else if(c == '%'){
-        putc(fd, c);
+        putc(buffer, &buffer_index, fd, c);
       } else {
         // Unknown % sequence.  Print it to draw attention.
-        putc(fd, '%');
-        putc(fd, c);
+        putc(buffer, &buffer_index, fd, '%');
+        putc(buffer, &buffer_index, fd, c);
       }
       state = 0;
     }
   }
+
+  flush(buffer, &buffer_index, fd);
 }
