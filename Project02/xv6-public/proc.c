@@ -14,6 +14,8 @@ struct {
 
 static struct proc *initproc;
 
+struct spinlock sbrklock;
+
 int nextpid = 1;
 int nexttid = 1;
 extern void forkret(void);
@@ -25,6 +27,7 @@ void
 pinit(void)
 {
   initlock(&ptable.lock, "ptable");
+  initlock(&sbrklock, "sbrk");
 }
 
 // Must be called with interrupts disabled
@@ -172,7 +175,7 @@ growproc(int n)
   else
     main_thread = curproc->parent;
 
-  acquire(&ptable.lock);
+  acquire(&sbrklock);
 
   sz = main_thread->sz;
   if(main_thread->memlim != 0 && sz + n > main_thread->memlim)
@@ -187,8 +190,7 @@ growproc(int n)
   main_thread->sz = sz;
   switchuvm(curproc);
 
-  release(&ptable.lock);
-
+  release(&sbrklock);
   return 0;
 }
 
@@ -213,18 +215,16 @@ fork(void)
   }
 
   // Copy process state from proc.
-  if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
+  if((np->pgdir = copyuvm(main_thread->pgdir, main_thread->sz)) == 0){
     kfree(np->kstack);
     np->kstack = 0;
     np->state = UNUSED;
     return -1;
   }
   np->sz = curproc->sz;
-  // If sub thread forks another process,
-  // make "its main thread" be the process's parent.
-  np->parent = main_thread;
   np->stacksize = main_thread->stacksize;
   *np->tf = *curproc->tf;
+  np->parent = curproc;
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
@@ -617,6 +617,7 @@ thread_create(thread_t *thread, void *(*start_routine)(void *), void *arg)
   if((np = allocproc()) == 0){
     return -1;
   }
+  nextpid--;
 
   // Share process state with main thread.
   acquire(&ptable.lock);
@@ -716,6 +717,42 @@ thread_exit_f(struct proc* proc, void *retval)
   proc->state = ZOMBIE;
 }
 
+// Force thread's exit, in another thread.
+// See `thread_exit`, `subthread_close`.
+void
+thread_exit_f2(struct proc* proc)
+{
+  struct proc *p;
+  int fd;
+
+  if(proc == initproc)
+    panic("init exiting");
+
+  // Lose reference to all open files.
+  for(fd = 0; fd < NOFILE; fd++){
+    if(proc->ofile[fd]){
+      fileclose(proc->ofile[fd]);
+      proc->ofile[fd] = 0;
+    }
+  }
+
+  begin_op();
+  iput(proc->cwd);
+  end_op();
+  proc->cwd = 0;
+
+  acquire(&ptable.lock);
+
+  // Pass abandoned children to init.
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->parent == proc){
+      p->parent = initproc;
+      if(p->state == ZOMBIE)
+        wakeup1(initproc);
+    }
+  }
+}
+
 // Exit a thread and save retval.
 void
 thread_exit(void *retval)
@@ -789,7 +826,7 @@ subthread_close(int pid)
 {
   struct proc *curproc = myproc();
   struct proc *p;
-  char *retval = "";
+  // char *retval = "";
 
   int main_exiting = 0;
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
@@ -804,7 +841,7 @@ subthread_close(int pid)
       if(main_exiting) {
         p->parent = curproc;
       }
-      thread_exit_f(p, (void *)retval);
+      thread_exit_f2(p);
       thread_join_f(p);
       // thread_exit_f acquires lock.
       release(&ptable.lock);
