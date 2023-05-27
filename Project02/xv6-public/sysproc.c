@@ -50,7 +50,12 @@ sys_sbrk(void)
 
   if(argint(0, &n) < 0)
     return -1;
-  addr = myproc()->sz;
+  struct proc *curproc = myproc();
+  if(curproc->thread == 0)
+    addr = curproc->sz;
+  else
+    addr = curproc->parent->sz;
+    
   if(growproc(n) < 0)
     return -1;
   return addr;
