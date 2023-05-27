@@ -9,9 +9,9 @@ void *thread(void *arg) {
   printf(1, "thread() entered with argument '%s'\n", arg);
   
   strcpy(ret, "This is a test");
-  thread_exit(ret);
+  // thread_exit(ret);
 
-  return 0;
+  exit();
 }
 
 int main() {
@@ -41,8 +41,8 @@ int main() {
     printf(1, "pthread_join() error");
     exit();
   }
-
   printf(1, "thread exited with '%s'\n", ret);
+
   if (thread_join(thid[2], &ret) != 0) {
     printf(1, "pthread_join() error");
     exit();

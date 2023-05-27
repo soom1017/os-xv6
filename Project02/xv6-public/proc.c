@@ -261,8 +261,7 @@ exit(void)
     panic("init exiting");
 
   // Sub-threads must be exited with `thread_exit`.
-  if(curproc->thread != 0)
-    panic("sub thread exiting");
+  subthread_close(curproc->pid);
 
   // Close all open files.
   for(fd = 0; fd < NOFILE; fd++){
@@ -587,7 +586,7 @@ listprocs(void)
 {
   struct proc *p;
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if(p->state == RUNNABLE || p->state == RUNNING) {
+    if(p->state == RUNNABLE || p->state == RUNNING || p->state == SLEEPING) {
       if(p->thread == 0)
         cprintf("name: %s\npid: %d\nnumber of stack pages: %d\nallocated memory: %d bytes\nmemory limit: %d bytes\n", 
                  p->name, p->pid, p->stacksize, p->sz, p->memlim);
@@ -738,6 +737,7 @@ thread_join_f(struct proc* p)
   p->kstack = 0;
   // freevm(p->pgdir);
   p->pid = 0;
+  p->thread = -1;
   p->parent = 0;
   p->name[0] = 0;
   p->killed = 0;
@@ -789,15 +789,22 @@ subthread_close(int pid)
 {
   struct proc *curproc = myproc();
   struct proc *p;
+  char *retval = "";
+
+  int main_exiting = 0;
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
     // Scan threads except current thread, which is RUNNING.
-    if(p->state == RUNNABLE && p->pid == pid) {
+    if(p != curproc && p->pid == pid) {
       if(p->thread == 0) {
         // Current thread will be main thread.
         curproc->parent = p->parent;
         curproc->thread = 0;
+        main_exiting = 1;
       }
-      thread_exit_f(p, 0);
+      if(main_exiting) {
+        p->parent = curproc;
+      }
+      thread_exit_f(p, (void *)retval);
       thread_join_f(p);
       // thread_exit_f acquires lock.
       release(&ptable.lock);
