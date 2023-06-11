@@ -436,16 +436,16 @@ bmap(struct inode *ip, uint bn)
     // 2. Second indirect
     bp = bread(ip->dev, addr);
     a = (uint*)bp->data;
-    if((addr = a[bn / 128]) == 0){
-      a[bn / 128] = addr = balloc(ip->dev);
+    if((addr = a[(bn % (128 * 128)) / 128]) == 0){
+      a[(bn % (128 * 128)) / 128] = addr = balloc(ip->dev);
       log_write(bp);
     }
     brelse(bp);
     // 3. Third indirect
     bp = bread(ip->dev, addr);
     a = (uint*)bp->data;
-    if((addr = a[(bn / 128) % 128]) == 0){
-      a[(bn / 128) % 128] = addr = balloc(ip->dev);
+    if((addr = a[(bn % (128 * 128)) % 128]) == 0){
+      a[(bn % (128 * 128)) % 128] = addr = balloc(ip->dev);
       log_write(bp);
     }
     brelse(bp);
