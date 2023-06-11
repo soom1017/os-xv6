@@ -66,6 +66,9 @@ ls(char *path)
       printf(1, "%s %d %d %d\n", fmtname(buf), st.type, st.ino, st.size);
     }
     break;
+  case T_LINK:
+    printf(1, "%s %d %d %d\n", fmtname(path), st.type, st.ino, st.size);
+    break;
   }
   close(fd);
 }

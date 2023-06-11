@@ -306,6 +306,12 @@ sys_open(void)
       end_op();
       return -1;
     }
+    if(ip->type == T_LINK){
+      if((ip = namei(ip->path)) == 0){
+        end_op();
+        return -1;
+      }
+    }
     ilock(ip);
     if(ip->type == T_DIR && omode != O_RDONLY){
       iunlockput(ip);
@@ -440,5 +446,27 @@ sys_pipe(void)
   }
   fd[0] = fd0;
   fd[1] = fd1;
+  return 0;
+}
+
+// Create the path new as a symbolic link to the old.
+int
+sys_symlink(void)
+{
+  char *new, *old;
+  struct inode *ip;
+
+  if(argstr(0, &old) < 0 || argstr(1, &new) < 0)
+    return -1;
+
+  begin_op();
+  if((ip = create(new, T_LINK, 0, 0)) == 0) {
+    end_op();
+    return -1;
+  }
+  safestrcpy(ip->path, old, strlen(old));
+  
+  iunlockput(ip);
+  end_op();
   return 0;
 }
