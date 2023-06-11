@@ -4,7 +4,7 @@
 #include "fcntl.h"
 #include "fs.h"
 
-#define F1SIZE 12288 // 6MB = 6291456B = 12288 (blocks) * 512B
+#define F1SIZE 16384 // 8MB = 8388608B = 16384 (blocks) * 512B
 #define F2SIZE 32768 // 16MB = 16777216B = 32678 (blocks) * 512B
 
 int
