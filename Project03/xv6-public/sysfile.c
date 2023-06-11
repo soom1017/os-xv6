@@ -288,7 +288,7 @@ sys_open(void)
   char *path;
   int fd, omode;
   struct file *f;
-  struct inode *ip;
+  struct inode *ip, *lp;
 
   if(argstr(0, &path) < 0 || argint(1, &omode) < 0)
     return -1;
@@ -306,13 +306,17 @@ sys_open(void)
       end_op();
       return -1;
     }
+    ilock(ip);
     if(ip->type == T_LINK){
-      if((ip = namei(ip->path)) == 0){
+      if((lp = namei(ip->path)) == 0){
+        iunlockput(ip);
         end_op();
         return -1;
       }
+      iunlockput(ip);
+      ip = lp;
+      ilock(ip);
     }
-    ilock(ip);
     if(ip->type == T_DIR && omode != O_RDONLY){
       iunlockput(ip);
       end_op();
@@ -464,7 +468,8 @@ sys_symlink(void)
     end_op();
     return -1;
   }
-  safestrcpy(ip->path, old, strlen(old));
+  strncpy(ip->path, old, strlen(old));
+  iupdate(ip);
   
   iunlockput(ip);
   end_op();

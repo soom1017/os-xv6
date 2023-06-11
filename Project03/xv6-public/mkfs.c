@@ -81,7 +81,7 @@ main(int argc, char *argv[])
     exit(1);
   }
 
-  assert((BSIZE % (sizeof(struct dinode)) - sizeof(char*)) == 0);
+  assert((BSIZE % sizeof(struct dinode)) == 0);
   assert((BSIZE % sizeof(struct dirent)) == 0);
 
   fsfd = open(argv[1], O_RDWR|O_CREAT|O_TRUNC, 0666);
