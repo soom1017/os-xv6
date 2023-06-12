@@ -231,8 +231,6 @@ iupdate(struct inode *ip)
   dip->nlink = ip->nlink;
   dip->size = ip->size;
   memmove(dip->addrs, ip->addrs, sizeof(ip->addrs));
-  memset(dip->path, 0, MAX_PATH_LENGTH);
-  strncpy(dip->path, ip->path, strlen(ip->path));
   log_write(bp);
   brelse(bp);
 }

@@ -27,9 +27,6 @@ struct superblock {
 #define TINDIRECT 128 * 128 * 128
 #define MAXFILE (NDIRECT + NINDIRECT + DINDIRECT + TINDIRECT)
 
-#define MAX_PATH_LENGTH 64  // To make assertion in mkfs clear, 512 % sizeof(dinode) == 0.
-                            // Current dinode size = 64 + 64(path) = 128
-
 // On-disk inode structure
 struct dinode {
   short type;           // File type
@@ -38,7 +35,6 @@ struct dinode {
   short nlink;          // Number of links to inode in file system
   uint size;            // Size of file (bytes)
   uint addrs[NDIRECT+3];    // Data block addresses (NDIRECT + 1single + 1double + 1triple)
-  char path[MAX_PATH_LENGTH];
 };
 
 // Inodes per block.

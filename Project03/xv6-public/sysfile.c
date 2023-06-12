@@ -296,7 +296,7 @@ getlink(char * path)
 int
 sys_open(void)
 {
-  char *path;
+  char *path, linkpth[64];
   int fd, omode;
   struct file *f;
   struct inode *ip, *lp;
@@ -318,8 +318,12 @@ sys_open(void)
       return -1;
     }
     ilock(ip);
-    if(ip->type == T_LINK){
-      if((lp = getlink(ip->path)) == 0){
+    // if symbolic link(T_LINK), redirect to original file
+    while(ip->type == T_LINK){
+      memset(linkpth, 0, sizeof(linkpth));
+      readi(ip, linkpth, 0, ip->size);
+      cprintf("link to %s ...\n", linkpth);
+      if((lp = getlink(linkpth)) == 0){
         iunlockput(ip);
         end_op();
         return -1;
@@ -327,6 +331,56 @@ sys_open(void)
       iunlockput(ip);
       ip = lp;
     }
+    if(ip->type == T_DIR && omode != O_RDONLY){
+      iunlockput(ip);
+      end_op();
+      return -1;
+    }
+  }
+
+  if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
+    if(f)
+      fileclose(f);
+    iunlockput(ip);
+    end_op();
+    return -1;
+  }
+  iunlock(ip);
+  end_op();
+
+  f->type = FD_INODE;
+  f->ip = ip;
+  f->off = 0;
+  f->readable = !(omode & O_WRONLY);
+  f->writable = (omode & O_WRONLY) || (omode & O_RDWR);
+  return fd;
+}
+
+int
+sys_openls(void)
+{
+  char *path;
+  int fd, omode;
+  struct file *f;
+  struct inode *ip;
+
+  if(argstr(0, &path) < 0 || argint(1, &omode) < 0)
+    return -1;
+
+  begin_op();
+
+  if(omode & O_CREATE){
+    ip = create(path, T_FILE, 0, 0);
+    if(ip == 0){
+      end_op();
+      return -1;
+    }
+  } else {
+    if((ip = namei(path)) == 0){
+      end_op();
+      return -1;
+    }
+    ilock(ip);
     if(ip->type == T_DIR && omode != O_RDONLY){
       iunlockput(ip);
       end_op();
@@ -478,10 +532,9 @@ sys_symlink(void)
     end_op();
     return -1;
   }
-  memset(ip->path, 0, MAX_PATH_LENGTH);
-  strncpy(ip->path, old, strlen(old));
+  writei(ip, old, 0, strlen(old));
   iupdate(ip);
-  
+
   iunlockput(ip);
   end_op();
   return 0;
