@@ -282,6 +282,17 @@ create(char *path, short type, short major, short minor)
   return ip;
 }
 
+struct inode *
+getlink(char * path)
+{
+  struct inode *ip;
+  if((ip = namei(path)) == 0){
+    return 0;
+  }
+  ilock(ip);
+  return ip;
+}
+
 int
 sys_open(void)
 {
@@ -308,14 +319,13 @@ sys_open(void)
     }
     ilock(ip);
     if(ip->type == T_LINK){
-      if((lp = namei(ip->path)) == 0){
+      if((lp = getlink(ip->path)) == 0){
         iunlockput(ip);
         end_op();
         return -1;
       }
       iunlockput(ip);
       ip = lp;
-      ilock(ip);
     }
     if(ip->type == T_DIR && omode != O_RDONLY){
       iunlockput(ip);
@@ -468,6 +478,7 @@ sys_symlink(void)
     end_op();
     return -1;
   }
+  memset(ip->path, 0, MAX_PATH_LENGTH);
   strncpy(ip->path, old, strlen(old));
   iupdate(ip);
   
