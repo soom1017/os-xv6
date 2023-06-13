@@ -91,6 +91,12 @@ sys_write(void)
 }
 
 int
+sys_sync(void)
+{
+  return sync();
+}
+
+int
 sys_close(void)
 {
   int fd;

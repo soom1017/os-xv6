@@ -48,7 +48,7 @@ struct log {
 struct log log;
 
 static void recover_from_log(void);
-static void commit();
+// static void commit();
 
 void
 initlog(int dev)
@@ -165,7 +165,7 @@ end_op(void)
   if(do_commit){
     // call commit w/o holding locks, since not allowed
     // to sleep with locks.
-    commit();
+  //   commit();
     acquire(&log.lock);
     log.committing = 0;
     wakeup(&log);
@@ -189,7 +189,7 @@ write_log(void)
   }
 }
 
-static void
+void
 commit()
 {
   if (log.lh.n > 0) {
@@ -215,8 +215,6 @@ log_write(struct buf *b)
 {
   int i;
 
-  if (log.lh.n >= LOGSIZE || log.lh.n >= log.size - 1)
-    panic("too big a transaction");
   if (log.outstanding < 1)
     panic("log_write outside of trans");
 
@@ -225,9 +223,15 @@ log_write(struct buf *b)
     if (log.lh.block[i] == b->blockno)   // log absorbtion
       break;
   }
-  log.lh.block[i] = b->blockno;
-  if (i == log.lh.n)
+  if (i == log.lh.n) {
+    // buffer full and new buffer writing, so sync(flush)
+    if (log.lh.n >= LOGSIZE || log.lh.n >= log.size - 1) {
+      sync();
+      i = 0;
+    }
     log.lh.n++;
+  }
+  log.lh.block[i] = b->blockno;
   b->flags |= B_DIRTY; // prevent eviction
   release(&log.lock);
 }

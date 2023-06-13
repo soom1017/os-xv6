@@ -100,6 +100,7 @@ bread(uint dev, uint blockno)
 
   b = bget(dev, blockno);
   if((b->flags & B_VALID) == 0) {
+    b->flags &= ~B_DIRTY;
     iderw(b);
   }
   return b;
@@ -142,3 +143,18 @@ brelse(struct buf *b)
 //PAGEBREAK!
 // Blank page.
 
+int
+sync(void)
+{
+  struct buf *b;
+  int nflush;
+
+  nflush = 0;
+  for(b = bcache.head.prev; b != &bcache.head; b = b->prev){
+    if(b->flags & B_DIRTY) {
+      nflush++;
+    }
+  }
+  commit();
+  return nflush;
+}
