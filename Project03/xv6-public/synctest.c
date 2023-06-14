@@ -8,7 +8,7 @@ char buf[8192];
 int stdout = 1;
 
 void
-writetest(void)
+writetest(int do_sync)
 {
   int fd;
   int i;
@@ -27,34 +27,9 @@ writetest(void)
       exit();
     }
   }
-  // sync();
+  if(do_sync)
+    sync();
   printf(stdout, "write ok\n");
-  close(fd);
-}
-
-void
-readtest(void)
-{
-  int fd;
-  int i;
-  fd = open("small", O_RDONLY);
-  if(fd >= 0){
-    printf(stdout, "open small succeeded ok\n");
-  } else {
-    printf(stdout, "error: open small failed!\n");
-    exit();
-  }
-  memset(buf, 0, sizeof(buf));
-  i = read(fd, buf, 512*10);
-  if(i == 512*10){
-    printf(stdout, "%s\n", buf);
-    printf(stdout, "read succeeded ok\n");
-  } else {
-    printf(stdout, "read failed\n");
-    printf(stdout, "file contains: %s\n", buf);
-    exit();
-  }
-  printf(stdout, "read ok\n");
   close(fd);
 }
 
@@ -64,10 +39,12 @@ main(int argc, char *argv[])
 {
   printf(1, "synctest starting\n");
 
-  if(!strcmp(argv[1], "-w"))
-    writetest();
-  else if(!strcmp(argv[1], "-r"))
-    readtest();
+  if(!strcmp(argv[1], "sync"))
+    writetest(1);
+  else
+    writetest(0);
+  // else if(!strcmp(argv[1], "-r"))
+  //   readtest();
   // printf(1, "all tests finished\n");
   exit();
 }

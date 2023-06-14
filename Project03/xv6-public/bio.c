@@ -84,6 +84,7 @@ bget(uint dev, uint blockno)
       b->blockno = blockno;
       b->flags = 0;
       b->refcnt = 1;
+      b->ip = 0;
       release(&bcache.lock);
       acquiresleep(&b->lock);
       return b;
@@ -152,6 +153,8 @@ sync(void)
   nflush = 0;
   for(b = bcache.head.prev; b != &bcache.head; b = b->prev){
     if(b->flags & B_DIRTY) {
+      if(b->ip != 0)
+        iupdate(b->ip);
       nflush++;
     }
   }

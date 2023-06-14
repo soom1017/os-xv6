@@ -235,6 +235,25 @@ iupdate(struct inode *ip)
   brelse(bp);
 }
 
+void
+inoupdate(struct inode *ip)
+{
+  struct buf *bp;
+  struct dinode *dip;
+
+  bp = bread(ip->dev, IBLOCK(ip->inum, sb));
+  dip = (struct dinode*)bp->data + ip->inum%IPB;
+  dip->type = ip->type;
+  dip->major = ip->major;
+  dip->minor = ip->minor;
+  dip->nlink = ip->nlink;
+  bp->ip = ip;
+  // dip->size = ip->size;
+  // memmove(dip->addrs, ip->addrs, sizeof(ip->addrs));
+  log_write(bp);
+  brelse(bp);
+}
+
 // Find the inode with number inum on device dev
 // and return the in-memory copy. Does not lock
 // the inode and does not read it from disk.
@@ -609,7 +628,7 @@ writei(struct inode *ip, char *src, uint off, uint n)
 
   if(n > 0 && off > ip->size){
     ip->size = off;
-    iupdate(ip);
+    inoupdate(ip);
   }
   return n;
 }
