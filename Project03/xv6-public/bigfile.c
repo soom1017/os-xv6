@@ -16,6 +16,7 @@ creat_test(int fd, int size)
   while(1){
     *(int*)buf = blocks;
     int cc = write(fd, buf, sizeof(buf));
+    sync();
     if(cc <= 0)
       break;
     blocks++;
@@ -40,6 +41,7 @@ main()
     printf(1, "f1file: cannot open f1.file for writing\n");
     exit();
   }
+  printf(1, "open ok\n");
 
   blocks = creat_test(fd, F1SIZE);
 

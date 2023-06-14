@@ -328,7 +328,7 @@ sys_open(void)
     while(ip->type == T_LINK){
       memset(linkpth, 0, sizeof(linkpth));
       readi(ip, linkpth, 0, ip->size);
-      cprintf("link to %s ...\n", linkpth);
+      // cprintf("link to %s ...\n", linkpth);
       if((lp = getlink(linkpth)) == 0){
         iunlockput(ip);
         end_op();
