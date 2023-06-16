@@ -236,6 +236,24 @@ iupdate(struct inode *ip)
 }
 
 void
+iupdate_f(struct inode *ip)
+{
+  struct buf *bp;
+  struct dinode *dip;
+
+  bp = bread(ip->dev, IBLOCK(ip->inum, sb));
+  dip = (struct dinode*)bp->data + ip->inum%IPB;
+  dip->type = ip->type;
+  dip->major = ip->major;
+  dip->minor = ip->minor;
+  dip->nlink = ip->nlink;
+  dip->size = ip->size;
+  memmove(dip->addrs, ip->addrs, sizeof(ip->addrs));
+  // log_write(bp);
+  brelse(bp);
+}
+
+void
 inoupdate(struct inode *ip)
 {
   struct buf *bp;

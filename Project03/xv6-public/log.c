@@ -223,7 +223,9 @@ log_write(struct buf *b)
   if (i == log.lh.n) {
     // buffer full and new buffer writing, so sync(flush)
     if (log.lh.n >= LOGSIZE || log.lh.n >= log.size - 1) {
-      sync();
+      release(&log.lock);
+      sync_f();
+      acquire(&log.lock);
       i = 0;
     }
     log.lh.n++;

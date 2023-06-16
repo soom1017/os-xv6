@@ -34,6 +34,7 @@ struct {
   // head.next is most recently used.
   struct buf head;
 } bcache;
+int buffull;
 
 void
 binit(void)
@@ -78,6 +79,7 @@ bget(uint dev, uint blockno)
   // Not cached; recycle an unused buffer.
   // Even if refcnt==0, B_DIRTY indicates a buffer is in use
   // because log.c has modified it but not yet committed it.
+not_cached:
   for(b = bcache.head.prev; b != &bcache.head; b = b->prev){
     if(b->refcnt == 0 && (b->flags & B_DIRTY) == 0) {
       b->dev = dev;
@@ -90,7 +92,28 @@ bget(uint dev, uint blockno)
       return b;
     }
   }
-  panic("bget: no buffers");
+  release(&bcache.lock);
+  if(buffull == 0 && bfull()) {
+    buffull = 1;
+    sync_f();
+    buffull = 0;
+    goto not_cached;
+  }
+  panic("bget: not reachable");
+}
+
+int
+bfull(void)
+{
+  struct buf *b;
+  for(b = bcache.head.prev; b != &bcache.head; b = b->prev){
+    if(b->refcnt == 0 && (b->flags & B_DIRTY) == 0) {
+      break;
+    }
+  }
+  if(b == &bcache.head)
+    return 1;
+  return 0;
 }
 
 // Return a locked buf with the contents of the indicated block.
@@ -160,4 +183,23 @@ sync(void)
   }
   commit();
   return nflush;
+}
+
+void
+sync_f(void)
+{
+  struct buf *b;
+
+  for(b = bcache.head.prev; b != &bcache.head; b = b->prev){
+    if(b->refcnt != 0)
+      continue;
+    if(b->flags & B_DIRTY) {
+      if(b->ip != 0)
+        iupdate_f(b->ip);
+
+      acquiresleep(&b->lock);
+      bwrite(b);
+      releasesleep(&b->lock);
+    }
+  }
 }

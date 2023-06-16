@@ -12,11 +12,12 @@ struct superblock;
 
 // bio.c
 void            binit(void);
+int             bfull(void);
 struct buf*     bread(uint, uint);
 void            brelse(struct buf*);
 void            bwrite(struct buf*);
 int             sync();
-
+void            sync_f();
 // console.c
 void            consoleinit(void);
 void            cprintf(char*, ...);
@@ -47,6 +48,7 @@ void            iput(struct inode*);
 void            iunlock(struct inode*);
 void            iunlockput(struct inode*);
 void            iupdate(struct inode*);
+void            iupdate_f(struct inode*);
 int             namecmp(const char*, const char*);
 struct inode*   namei(char*);
 struct inode*   nameiparent(char*, char*);
